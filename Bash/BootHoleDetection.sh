@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# shellcheck enable=require-variable-braces
 
 # Revoked ubuntu certificate encoded in base64
 ubuntu_cert_b64="
@@ -368,19 +369,21 @@ c194b98bd9a2129a4c1b6044eede090f823535deaab3b48dac2685121c7ca133
 5d6a0cbdaaf188974e98aca06e664b4ae98d458327717a20b1ff6c80518eea3d
 "
 
-echo "Boot Hole Detection Bash Script"
-echo "Copyright (C) 2020, Eclypsium, Inc."
-echo "This program comes with ABSOLUTELY NO WARRANTY."
-echo "This is free software, and you are welcome to redistribute it under certain conditions;"
-echo ""
+cat <<_END_OF_COPYRIGHT
+Boot Hole Detection Bash Script
+Copyright (C) 2020, Eclypsium, Inc.
+This program comes with ABSOLUTELY NO WARRANTY.
+This is free software, and you are welcome to redistribute it under certain conditions;
+_END_OF_COPYRIGHT
+
 
 if ! command -v mokutil >/dev/null; then
-    echo "[-] Command 'mokutil' not found: please check README for dependencies"
+    printf "[-] Command 'mokutil' not found: please check README for dependencies\n"
     exit 1
 fi
 
 if ! command -v sbverify >/dev/null; then
-    echo "[-] Command 'sbverify' not found: please check README for dependencies"
+    printf "[-] Command 'sbverify' not found: please check README for dependencies\n"
     exit 1
 fi
 
@@ -396,62 +399,70 @@ check_secure_boot() {
 }
 
 check_cert() {
-    if sbverify --cert $1 $2 >/dev/null 2>$err; then
-        echo "[!] ${2} signed with revoked certificate"
+    if sbverify --cert "${1}" "${2}" >/dev/null 2>"${err}"; then
+        printf "%s\n" "[!] ${2} signed with revoked certificate"
         vuln=1
     fi
 
-    grep -qs 'Verify error' $err
-    if [ $? -eq 0 ]; then
-        cat $err
+    if grep -qs 'Verify error' "${err}"; then
+        cat "${err}"
         sb_failed=1
     fi
 }
 
 check_hash() {
-    local file_hash=$(sha256sum $1 | cut -d ' ' -f 1)
-    if echo $hashes | grep -Eqs "$file_hash"; then
+    local file_hash
+    file_hash="$(sha256sum "${1}" | cut -d ' ' -f 1)"
+
+    if printf "%s" "${hashes}" | grep -Eqs "${file_hash}"; then
         vuln=1
-        echo -e "[!] ${1} matches revoked hash"
+        printf "%s\n" "[!] ${1} matches revoked hash"
     fi
 }
 
 # Check if SecureBoot is enabled
 if check_secure_boot; then
-    echo -e "[!] SecureBoot is disabled: ESP not protected\n"
+    printf "[!] SecureBoot is disabled: ESP not protected\n\n"
 else
-    echo -e "[+] SecureBoot is enabled\n"
+    printf "[+] SecureBoot is enabled\n\n"
 fi
 
 # Attempt to mount efi partition if not available
 if ! [ -r /boot/efi/EFI ]; then
     if mount /boot/efi; then
-        echo -e "[*] Mounted efi partition"
+        printf "[*] Mounted efi partition\n"
     else
-        echo -e "[-] Mounting efi partition failed"
+        printf "[-] Mounting efi partition failed\n"
         exit 1
     fi
 fi
 
 # Decode certificates
-echo $ubuntu_cert_b64 | tr -d '[:space:]' | base64 -d > $ubuntu_cert_temp
-echo $debian_cert_b64 | tr -d '[:space:]' | base64 -d > $debian_cert_temp
+decode_cert() {
+    local b64="${1}"
+    local tmp="${2}"
+
+    printf "%s" "${b64}" | tr -d '[:space:]' | base64 -d >"${tmp}"
+}
+
+decode_cert "${ubuntu_cert_b64}" "${ubuntu_cert_temp}"
+decode_cert "${debian_cert_b64}" "${debian_cert_temp}"
 
 
 # Check all efi hashes and certs
 while IFS= read -r -d '' file; do
-    check_hash $file
-    check_cert $ubuntu_cert_temp $file
-    check_cert $debian_cert_temp $file
-done < <(find /boot/efi/ -name "*.efi" -type f -print0)
+    check_hash "${file}"
+    check_cert "${ubuntu_cert_temp}" "${file}"
+    check_cert "${debian_cert_temp}" "${file}"
+done < <(find /boot/efi/ -name '*.efi' -type f -print0)
 
 
-if [ $vuln -eq 1 ]; then
-    echo -e "\n[!] ALERT: GRUB/Shim is vulnerable to BootHole; Check for bootloader updates from Operating System"
+if [ ${vuln} -eq 1 ]; then
+    printf "\n[!] ALERT: GRUB/Shim is vulnerable to BootHole; Check for bootloader updates from Operating System\n"
 else
-    if [ $sb_failed -eq 1 ]; then
-        echo -e "\n[-] sbverify failed to verify efi certificates: result inconclusive"
+    if [ ${sb_failed} -eq 1 ]; then
+        printf "\n[-] sbverify failed to verify efi certificates: result inconclusive\n"
         exit 1
     fi
-    echo -e "\n[+] No indication found that GRUB/Shim is vulnerable to BootHole"
+    printf "\n[+] No indication found that GRUB/Shim is vulnerable to BootHole\n"
 fi
